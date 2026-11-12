@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "demo": "bun run demo.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
