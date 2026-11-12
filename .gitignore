@@ -1,0 +1,21 @@
+# Dependencias y builds
+node_modules/
+dist/
+/tmp
+/out-tsc
+
+# Salidas del agente (se regeneran)
+out/
+
+# Secretos
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/*
