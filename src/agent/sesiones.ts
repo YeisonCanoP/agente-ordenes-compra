@@ -18,7 +18,7 @@ export type EntradaHistorial =
 
 export type Sesion = {
   id: string
-  /** Conversación que se envía al modelo (sin el system prompt). */
+  /** Conversación que se envía al modelo (sin el system prompt). Crece solo mientras haya tokens. */
   mensajes: Mensaje[]
   /** Conversación tal como se muestra en el chat. */
   historial: EntradaHistorial[]
@@ -28,49 +28,72 @@ export type Sesion = {
   resultados: Resultados
 }
 
-/** Sesiones en memoria (PRD 6.1: sin base de datos). Cada sesión procesa un turno a la vez. */
+/** Entradas que conserva el historial visible de una sesión; las más antiguas se descartan. */
+export const MAX_ENTRADAS_HISTORIAL = 60
+
+export function agregarAlHistorial(sesion: Sesion, entrada: EntradaHistorial): void {
+  sesion.historial.push(entrada)
+  if (sesion.historial.length > MAX_ENTRADAS_HISTORIAL) {
+    sesion.historial.splice(0, sesion.historial.length - MAX_ENTRADAS_HISTORIAL)
+  }
+}
+
+/**
+ * Sesiones en memoria (PRD 6.1: sin base de datos; se pierden al reiniciar el proceso).
+ * La memoria está acotada: máximo de sesiones, historial recortado y un turno a la vez por sesión.
+ */
 export class Sesiones {
   private readonly sesiones = new Map<string, Sesion>()
-  private readonly colas = new Map<string, Promise<void>>()
+  private readonly ocupadas = new Set<string>()
   private readonly maximo: number
 
-  /** Al superar `maximo` sesiones se descarta la más antigua: la memoria no crece sin límite. */
-  constructor(maximo = 200) {
+  constructor(maximo = 50) {
     this.maximo = maximo
   }
 
+  /** Devuelve la sesión (creándola si no existe) y la marca como la usada más recientemente. */
   obtener(id: string): Sesion {
-    const existente = this.sesiones.get(id)
-    if (existente) return existente
-    const nueva: Sesion = { id, mensajes: [], historial: [], tokens: 0, pendientes: new Map(), resultados: new Map() }
-    this.sesiones.set(id, nueva)
-    this.descartarAntiguas()
-    return nueva
-  }
-
-  private descartarAntiguas(): void {
-    for (const id of this.sesiones.keys()) {
-      if (this.sesiones.size <= this.maximo) return
-      this.sesiones.delete(id)
-      this.colas.delete(id)
+    const sesion = this.sesiones.get(id) ?? {
+      id,
+      mensajes: [],
+      historial: [],
+      tokens: 0,
+      pendientes: new Map(),
+      resultados: new Map(),
     }
+    this.sesiones.delete(id)
+    this.sesiones.set(id, sesion)
+    this.descartarInactivas()
+    return sesion
   }
 
   buscar(id: string): Sesion | null {
     return this.sesiones.get(id) ?? null
   }
 
-  /** Evita que dos mensajes simultáneos de la misma sesión mezclen sus historiales. */
-  enSerie<T>(id: string, tarea: (sesion: Sesion) => Promise<T>): Promise<T> {
-    const anterior = this.colas.get(id) ?? Promise.resolve()
-    const resultado = anterior.then(() => tarea(this.obtener(id)))
-    this.colas.set(
-      id,
-      resultado.then(
-        () => undefined,
-        () => undefined,
-      ),
-    )
-    return resultado
+  estaOcupada(id: string): boolean {
+    return this.ocupadas.has(id)
+  }
+
+  get turnosActivos(): number {
+    return this.ocupadas.size
+  }
+
+  /** Ejecuta un turno marcando la sesión como ocupada: no admite otro mensaje hasta que termine. */
+  async ejecutar<T>(id: string, tarea: (sesion: Sesion) => Promise<T>): Promise<T> {
+    this.ocupadas.add(id)
+    try {
+      return await tarea(this.obtener(id))
+    } finally {
+      this.ocupadas.delete(id)
+    }
+  }
+
+  /** Al superar el máximo se descartan las sesiones menos usadas, nunca una con un turno en curso. */
+  private descartarInactivas(): void {
+    for (const id of this.sesiones.keys()) {
+      if (this.sesiones.size <= this.maximo) return
+      if (!this.ocupadas.has(id)) this.sesiones.delete(id)
+    }
   }
 }

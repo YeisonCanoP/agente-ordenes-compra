@@ -12,6 +12,8 @@ export type Servicios = {
   deps: Dependencias
   sesiones: Sesiones
   presupuesto: Presupuesto
+  /** Conversaciones que pueden estar esperando al modelo a la vez. */
+  maxTurnosSimultaneos: number
   /** Si está definida, el chat exige la cabecera x-clave-acceso. */
   claveAcceso: string | undefined
   /** Carpeta con index.html, app.js y estilos.css. */
@@ -73,13 +75,16 @@ async function chat(s: Servicios, peticion: Request): Promise<Response> {
     return json(429, { error: "El servicio alcanzó su tope diario de uso del modelo. Intenta de nuevo mañana." })
   }
   const { sessionId, message, stream } = cuerpo.data
+  if (s.sesiones.estaOcupada(sessionId)) {
+    return json(409, { error: "Esta conversación ya está procesando un mensaje. Espera su respuesta." })
+  }
+  if (s.sesiones.turnosActivos >= s.maxTurnosSimultaneos) {
+    return json(503, { error: "El servidor está atendiendo el máximo de conversaciones a la vez. Intenta de nuevo en unos segundos." })
+  }
   const turno = (alLlamar?: AlLlamar): Promise<RespuestaTurno> =>
-    s.sesiones.enSerie(sessionId, async (sesion) => {
-      const antes = sesion.tokens
-      const respuesta = await ejecutarTurno(sesion, message, { ...s.deps, alLlamar })
-      s.presupuesto.sumar(sesion.tokens - antes)
-      return respuesta
-    })
+    s.sesiones.ejecutar(sessionId, (sesion) =>
+      ejecutarTurno(sesion, message, { ...s.deps, presupuesto: s.presupuesto, alLlamar }),
+    )
   return stream ? enVivo(turno) : json(200, await turno())
 }
 

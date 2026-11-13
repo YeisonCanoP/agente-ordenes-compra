@@ -17,8 +17,9 @@ const llm = new OpenAiAdapter(config.llm)
 
 const manejar = crearManejador({
   deps: { llm, directory, promptSistema: await cargarPrompt(directory), limites: config.agente },
-  sesiones: new Sesiones(),
-  presupuesto: new Presupuesto(config.servidor.maxTokensDia),
+  sesiones: new Sesiones(config.servidor.maxSesiones),
+  presupuesto: await Presupuesto.abrir(config.servidor.maxTokensDia, join(directory, "out", "presupuesto.json")),
+  maxTurnosSimultaneos: config.servidor.maxTurnosSimultaneos,
   claveAcceso: config.servidor.claveAcceso,
   raizWeb: join(directory, "web"),
 })

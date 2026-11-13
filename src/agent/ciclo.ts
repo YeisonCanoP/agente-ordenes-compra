@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { ErrorLlm } from "../llm/adapter.ts"
-import type { DefinicionHerramienta, LlamadaHerramienta, LlmAdapter, RespuestaLlm } from "../llm/adapter.ts"
+import type { DefinicionHerramienta, LlamadaHerramienta, LlmAdapter, Mensaje, RespuestaLlm } from "../llm/adapter.ts"
 import { fallo } from "../tools/resultado.ts"
 import { actualizarPendientes, autorizarSegunRespuesta, hayPendientes, retirarConfirmacion } from "./confirmacion.ts"
 import type { Pendientes } from "./confirmacion.ts"
@@ -8,6 +8,7 @@ import { enlazar, recordar } from "./enlaces.ts"
 import { definiciones, ejecutarHerramienta } from "./herramientas.ts"
 import { registrarEvento } from "./log.ts"
 import { resumir } from "./resumen.ts"
+import { agregarAlHistorial } from "./sesiones.ts"
 import type { LlamadaVisible, Sesion } from "./sesiones.ts"
 
 export type Dependencias = {
@@ -16,6 +17,8 @@ export type Dependencias = {
   directory: string
   promptSistema: string
   limites: { maxIteraciones: number; maxTokensSesion: number }
+  /** Tope global de tokens: cada llamada al modelo reserva antes de salir y liquida al volver. */
+  presupuesto?: { reservar(tokens: number): boolean; liquidar(reservados: number, reales: number): void }
   /** Aviso en vivo de cada llamada a herramienta (para streaming). */
   alLlamar?: (llamada: LlamadaVisible) => void
 }
@@ -25,11 +28,12 @@ export type RespuestaTurno = { reply: string; toolCalls: LlamadaVisible[]; needs
 type Turno = { sesion: Sesion; deps: Dependencias; autorizados: Pendientes; toolCalls: LlamadaVisible[] }
 
 const ConOk = z.looseObject({ ok: z.boolean() })
+const RESERVA_RESPUESTA = 1000
 const SIN_TEXTO = "(El modelo no devolvió texto. Intenta reformular tu mensaje.)"
 
 /** Un turno del chat: mensaje de la analista → modelo ↔ herramientas → respuesta (PRD 6.3). */
 export async function ejecutarTurno(sesion: Sesion, mensaje: string, deps: Dependencias): Promise<RespuestaTurno> {
-  sesion.historial.push({ rol: "usuario", contenido: mensaje, ts: new Date().toISOString() })
+  agregarAlHistorial(sesion, { rol: "usuario", contenido: mensaje, ts: new Date().toISOString() })
   const autorizados = autorizarSegunRespuesta(mensaje, sesion.pendientes)
   if (autorizados.size > 0) {
     const casos = Object.fromEntries(autorizados)
@@ -40,7 +44,8 @@ export async function ejecutarTurno(sesion: Sesion, mensaje: string, deps: Depen
 
   const needsConfirmation = hayPendientes(sesion.pendientes)
   const { toolCalls } = turno
-  sesion.historial.push({ rol: "asistente", contenido: reply, toolCalls, needsConfirmation, ts: new Date().toISOString() })
+  const ts = new Date().toISOString()
+  agregarAlHistorial(sesion, { rol: "asistente", contenido: reply, toolCalls, needsConfirmation, ts })
   return { reply, toolCalls, needsConfirmation }
 }
 
@@ -65,14 +70,19 @@ async function conversar(turno: Turno, mensaje: string): Promise<string> {
 /** Llama al modelo. Un fallo del proveedor se devuelve como texto para el chat: la sesión no muere (CA5). */
 async function consultar(turno: Turno, herramientas: DefinicionHerramienta[]): Promise<RespuestaLlm | string> {
   const { sesion, deps } = turno
+  const mensajes: Mensaje[] = [{ rol: "sistema", contenido: deps.promptSistema }, ...sesion.mensajes]
+  const reserva = estimarTokens(mensajes)
+  if (deps.presupuesto && !deps.presupuesto.reservar(reserva)) {
+    return `El servicio alcanzó su tope diario de uso del modelo. Intenta de nuevo mañana.${hechoHastaAhora(turno)}`
+  }
   try {
-    const respuesta = await deps.llm.enviar(
-      [{ rol: "sistema", contenido: deps.promptSistema }, ...sesion.mensajes],
-      herramientas,
-    )
-    sesion.tokens += respuesta.tokens.entrada + respuesta.tokens.salida
+    const respuesta = await deps.llm.enviar(mensajes, herramientas)
+    const reales = respuesta.tokens.entrada + respuesta.tokens.salida
+    sesion.tokens += reales
+    deps.presupuesto?.liquidar(reserva, reales)
     return respuesta
   } catch (error) {
+    deps.presupuesto?.liquidar(reserva, 0)
     if (!(error instanceof ErrorLlm)) console.error("Error inesperado del adaptador LLM:", error)
     const motivo = error instanceof ErrorLlm ? error.message : "Ocurrió un error inesperado al llamar al modelo."
     return `No pude obtener respuesta del modelo. ${motivo} Tu sesión sigue activa: puedes volver a intentarlo.${hechoHastaAhora(turno)}`
@@ -150,6 +160,15 @@ function hechoHastaAhora(turno: Turno): string {
   if (turno.toolCalls.length === 0) return ""
   const pasos = turno.toolCalls.map((l) => `${l.nombre} (${l.ok ? "ok" : "con error"})`).join(", ")
   return ` En este turno se ejecutó: ${pasos}.`
+}
+
+/** Estimación conservadora del costo de una llamada: ~3 caracteres por token más la respuesta. */
+function estimarTokens(mensajes: Mensaje[]): number {
+  const caracteres = mensajes.reduce((total, mensaje) => {
+    const llamadas = mensaje.rol === "asistente" ? mensaje.llamadas.reduce((n, l) => n + l.argumentos.length, 0) : 0
+    return total + mensaje.contenido.length + llamadas
+  }, 0)
+  return Math.ceil(caracteres / 3) + RESERVA_RESPUESTA
 }
 
 function parsearArgumentos(crudo: string): unknown {

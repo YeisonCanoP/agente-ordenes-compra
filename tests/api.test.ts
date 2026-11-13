@@ -5,8 +5,9 @@ import { cargarPrompt } from "../src/agent/prompt.ts"
 import { Sesiones } from "../src/agent/sesiones.ts"
 import { crearManejador } from "../src/http/api.ts"
 import { Presupuesto } from "../src/http/presupuesto.ts"
-import { LlmGuionado, RAIZ, decir, directorioTemporal, limpiarTemporales, pasosHastaCrear } from "./ayuda.ts"
+import { LlmGuionado, RAIZ, TOKENS, decir, directorioTemporal, limpiarTemporales, pasosHastaCrear } from "./ayuda.ts"
 import type { Paso } from "./ayuda.ts"
+import type { LlmAdapter } from "../src/llm/adapter.ts"
 
 afterAll(limpiarTemporales)
 
@@ -18,19 +19,39 @@ const Turno = z.object({
 })
 const ConError = z.object({ error: z.string() })
 
-type Opciones = { claveAcceso?: string; maxTokensDia?: number }
+type Opciones = { claveAcceso?: string; maxTokensDia?: number; maxTurnos?: number; llm?: LlmAdapter }
+
+/** Modelo que no responde hasta que el test lo libera: sirve para probar peticiones simultáneas. */
+function llmRetenido(tokens = TOKENS) {
+  let liberar: () => void = () => undefined
+  const espera = new Promise<void>((resolver) => {
+    liberar = resolver
+  })
+  const estado = { llamadas: 0 }
+  const llm: LlmAdapter = {
+    proveedor: "prueba",
+    modelo: "retenido",
+    async enviar() {
+      estado.llamadas++
+      await espera
+      return { contenido: "Listo.", llamadas: [], tokens }
+    },
+  }
+  return { llm, liberar, estado }
+}
 
 async function api(pasos: Paso[], opciones: Opciones = {}) {
   const directory = await directorioTemporal()
   const manejar = crearManejador({
     deps: {
-      llm: new LlmGuionado(pasos),
+      llm: opciones.llm ?? new LlmGuionado(pasos),
       directory,
       promptSistema: await cargarPrompt(RAIZ),
       limites: { maxIteraciones: 25, maxTokensSesion: 100_000 },
     },
     sesiones: new Sesiones(),
     presupuesto: new Presupuesto(opciones.maxTokensDia ?? 1_000_000),
+    maxTurnosSimultaneos: opciones.maxTurnos ?? 3,
     claveAcceso: opciones.claveAcceso,
     raizWeb: join(RAIZ, "web"),
   })
@@ -129,8 +150,44 @@ describe("API del chat", () => {
     expect(await (await get("/api/health")).json()).toMatchObject({ ok: true, protegido: true })
   })
 
+  test("una sesión atiende un mensaje a la vez y el servidor limita los turnos simultáneos", async () => {
+    const { llm, liberar } = llmRetenido()
+    const { chat } = await api([], { llm, maxTurnos: 1 })
+    const enCurso = chat({ sessionId: SESION, message: "Hola" })
+
+    const mismaSesion = await chat({ sessionId: SESION, message: "Hola otra vez" })
+    expect(mismaSesion.status).toBe(409)
+    expect(await errorDe(mismaSesion)).toContain("ya está procesando")
+
+    const otraSesion = await chat({ sessionId: "otra-sesion-distinta", message: "Hola" })
+    expect(otraSesion.status).toBe(503)
+
+    liberar()
+    expect((await enCurso).status).toBe(200)
+    expect((await chat({ sessionId: SESION, message: "Hola de nuevo" })).status).toBe(200)
+  })
+
+  test("el tope diario se reserva antes de llamar: dos sesiones simultáneas no lo superan", async () => {
+    const { llm, liberar, estado } = llmRetenido()
+    // Cada llamada reserva unos 4.000 tokens (system prompt + respuesta): solo cabe una.
+    const { chat } = await api([], { llm, maxTokensDia: 6_000 })
+    const primera = chat({ sessionId: "sesion-numero-uno", message: "Hola" })
+    const segunda = chat({ sessionId: "sesion-numero-dos", message: "Hola" })
+    await Bun.sleep(5)
+    liberar()
+
+    const respuestas = [Turno.parse(await (await primera).json()), Turno.parse(await (await segunda).json())]
+    expect(estado.llamadas).toBe(1)
+    expect(respuestas.map((r) => r.reply).sort()).toEqual([
+      "El servicio alcanzó su tope diario de uso del modelo. Intenta de nuevo mañana.",
+      "Listo.",
+    ])
+  })
+
   test("al agotar el tope diario de tokens responde 429 sin llamar al modelo", async () => {
-    const { chat } = await api([() => decir("Hola.")], { maxTokensDia: 10 })
+    const { llm, liberar } = llmRetenido({ entrada: 6_000, salida: 0 })
+    liberar()
+    const { chat } = await api([], { llm, maxTokensDia: 5_500 })
     expect((await chat({ sessionId: SESION, message: "Hola" })).status).toBe(200)
 
     const segundo = await chat({ sessionId: SESION, message: "Hola de nuevo" })
