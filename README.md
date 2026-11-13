@@ -13,7 +13,7 @@ Reto técnico 03 · Periferia IT Group. El planteamiento completo está en [SOLU
 
 El chat está protegido: al enviar el primer mensaje pide una clave de acceso.
 
-Clave de acceso: **PENDIENTE**
+Clave de acceso: **`pruebaPeriferia`**
 
 Además de la clave, el gasto está acotado por topes de tokens
 (ver [Variables de entorno](#variables-de-entorno)).
