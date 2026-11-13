@@ -4,6 +4,7 @@ import type { DefinicionHerramienta } from "../llm/adapter.ts"
 import * as oc from "../tools/oc.ts"
 import type { Ctx } from "../tools/oc.ts"
 import { fallo } from "../tools/resultado.ts"
+import { argumentosEnlazados } from "./enlaces.ts"
 
 type Registrada = {
   definicion: DefinicionHerramienta
@@ -16,10 +17,15 @@ type Herramienta<S extends z.ZodRawShape> = {
   execute(args: z.infer<z.ZodObject<S>>, ctx: Ctx): Promise<string>
 }
 
-/** Expone una herramienta al modelo: JSON Schema para describirla y validación zod antes de ejecutarla. */
+/**
+ * Expone una herramienta al modelo: JSON Schema para describirla y validación zod antes de ejecutarla.
+ * El modelo solo ve los argumentos que le corresponde enviar; los enlazados los completa el ciclo.
+ */
 function adaptar<S extends z.ZodRawShape>(nombre: string, herramienta: Herramienta<S>): Registrada {
   const esquema = z.object(herramienta.args)
-  const { $schema: _dialecto, ...parametros } = z.toJSONSchema(esquema)
+  const ocultos = argumentosEnlazados(nombre)
+  const visibles = Object.fromEntries(Object.entries(herramienta.args).filter(([clave]) => !ocultos.includes(clave)))
+  const { $schema: _dialecto, ...parametros } = z.toJSONSchema(z.object(visibles))
   return {
     definicion: { nombre, descripcion: herramienta.description, parametros },
     async ejecutar(argumentos, ctx) {

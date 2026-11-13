@@ -2,7 +2,6 @@ import { chmod, cp, mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { z } from "zod"
 import type { DefinicionHerramienta, LlmAdapter, Mensaje, RespuestaLlm } from "../src/llm/adapter.ts"
 
 export const RAIZ = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -43,28 +42,16 @@ export const llamar = (nombre: string, argumentos: unknown): RespuestaLlm => ({
   tokens: TOKENS,
 })
 
-/** `data` del último resultado exitoso de una herramienta, tal como lo vería el modelo. */
-export function dato(mensajes: Mensaje[], nombre: string): Record<string, unknown> {
-  const mensaje = mensajes.findLast((m) => m.rol === "herramienta" && m.nombre === nombre)
-  if (!mensaje) throw new Error(`El guion esperaba un resultado de ${nombre}`)
-  return z.object({ data: z.record(z.string(), z.unknown()) }).parse(JSON.parse(mensaje.contenido)).data
-}
-
 export const crearCon =
   (caso: string, confirmado?: boolean): Paso =>
-  (m) =>
-    llamar("oc_crear", { caso, payload: dato(m, "oc_construir_payload").payload, confirmado })
+  () =>
+    llamar("oc_crear", { caso, confirmado })
 
 /** Guion completo de una solicitud: leer → validar → construir → evidencia → crear. */
 export const pasosHastaCrear = (caso: string, confirmado?: boolean): Paso[] => [
   () => llamar("oc_leer_paquete", { caso }),
-  (m) => llamar("oc_validar", { caso, paquete: dato(m, "oc_leer_paquete") }),
-  (m) =>
-    llamar("oc_construir_payload", {
-      caso,
-      paquete: dato(m, "oc_leer_paquete"),
-      derivados: dato(m, "oc_validar").derivados,
-    }),
+  () => llamar("oc_validar", { caso }),
+  () => llamar("oc_construir_payload", { caso }),
   () => llamar("oc_generar_evidencia", { caso }),
   crearCon(caso, confirmado),
 ]

@@ -3,6 +3,7 @@ import { ErrorLlm } from "../llm/adapter.ts"
 import type { DefinicionHerramienta, LlamadaHerramienta, LlmAdapter, RespuestaLlm } from "../llm/adapter.ts"
 import { fallo } from "../tools/resultado.ts"
 import { actualizarPendientes, cerrarPendientes, retirarConfirmacion } from "./confirmacion.ts"
+import { enlazar, recordar } from "./enlaces.ts"
 import { definiciones, ejecutarHerramienta } from "./herramientas.ts"
 import { registrarLlamada } from "./log.ts"
 import { resumir } from "./resumen.ts"
@@ -76,13 +77,13 @@ async function consultar(turno: Turno, herramientas: DefinicionHerramienta[]): P
 async function ejecutarLlamada(turno: Turno, llamada: LlamadaHerramienta): Promise<void> {
   const { sesion, deps } = turno
   const inicio = Date.now()
-  const argumentos = retirarConfirmacion(llamada.nombre, parsearArgumentos(llamada.argumentos), turno.autorizados)
-  const salida =
-    argumentos === undefined
-      ? fallo(`Los argumentos de ${llamada.nombre} no son un JSON válido. Corrige y vuelve a llamar.`)
-      : await ejecutarHerramienta(llamada.nombre, argumentos, { directory: deps.directory, sessionId: sesion.id })
+  const recibidos = retirarConfirmacion(llamada.nombre, parsearArgumentos(llamada.argumentos), turno.autorizados)
+  const enlazado = enlazar(llamada.nombre, recibidos, sesion.resultados)
+  const argumentos = "falta" in enlazado ? recibidos : enlazado.argumentos
+  const salida = await ejecutarOExplicar(turno, llamada.nombre, argumentos, "falta" in enlazado ? enlazado.falta : null)
 
   const resultado: unknown = JSON.parse(salida)
+  recordar(sesion.resultados, llamada.nombre, argumentos, resultado)
   actualizarPendientes(sesion.pendientes, llamada.nombre, argumentos, resultado)
   sesion.mensajes.push({ rol: "herramienta", idLlamada: llamada.id, nombre: llamada.nombre, contenido: salida })
 
@@ -105,6 +106,12 @@ async function ejecutarLlamada(turno: Turno, llamada: LlamadaHerramienta): Promi
     duracion_ms: Date.now() - inicio,
   })
   deps.alLlamar?.(visible)
+}
+
+async function ejecutarOExplicar(turno: Turno, nombre: string, argumentos: unknown, falta: string | null): Promise<string> {
+  if (argumentos === undefined) return fallo(`Los argumentos de ${nombre} no son un JSON válido. Corrige y vuelve a llamar.`)
+  if (falta) return fallo(falta)
+  return ejecutarHerramienta(nombre, argumentos, { directory: turno.deps.directory, sessionId: turno.sesion.id })
 }
 
 /** CA1: al llegar al tope, el agente responde con lo que tiene y lo que falta, sin más herramientas. */

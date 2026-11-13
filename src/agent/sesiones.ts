@@ -1,5 +1,6 @@
 import type { Mensaje } from "../llm/adapter.ts"
 import type { Pendientes } from "./confirmacion.ts"
+import type { Resultados } from "./enlaces.ts"
 
 /** Llamada a herramienta tal como la ve la analista en el chat (CA4). */
 export type LlamadaVisible = {
@@ -23,6 +24,8 @@ export type Sesion = {
   historial: EntradaHistorial[]
   tokens: number
   pendientes: Pendientes
+  /** Resultados de herramientas que el ciclo enlaza con las llamadas siguientes. */
+  resultados: Resultados
 }
 
 /** Sesiones en memoria (PRD 6.1: sin base de datos). Cada sesión procesa un turno a la vez. */
@@ -39,7 +42,7 @@ export class Sesiones {
   obtener(id: string): Sesion {
     const existente = this.sesiones.get(id)
     if (existente) return existente
-    const nueva: Sesion = { id, mensajes: [], historial: [], tokens: 0, pendientes: new Map() }
+    const nueva: Sesion = { id, mensajes: [], historial: [], tokens: 0, pendientes: new Map(), resultados: new Map() }
     this.sesiones.set(id, nueva)
     this.descartarAntiguas()
     return nueva

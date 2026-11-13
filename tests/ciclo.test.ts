@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { ejecutarTurno } from "../src/agent/ciclo.ts"
 import type { Dependencias } from "../src/agent/ciclo.ts"
+import { definiciones } from "../src/agent/herramientas.ts"
 import { cargarPrompt } from "../src/agent/prompt.ts"
 import { Sesiones } from "../src/agent/sesiones.ts"
 import type { Sesion } from "../src/agent/sesiones.ts"
@@ -98,6 +99,31 @@ describe("ciclo del agente", () => {
     expect(await ordenesCreadas(deps)).toBe(0)
   })
 
+  test("CA2: el modelo no transporta datos; un payload inventado se ignora", async () => {
+    const inventado = { posiciones: [{ numero: 10, precio_unitario: 1 }] }
+    const { deps, sesion } = await preparar([
+      ...pasosHastaCrear("sol-001").slice(0, 4),
+      () => llamar("oc_crear", { caso: "sol-001", payload: inventado }),
+      () => decir("OC creada."),
+    ])
+    const respuesta = await ejecutarTurno(sesion, "Procesa sol-001", deps)
+
+    expect(respuesta.toolCalls[4]).toMatchObject({ nombre: "oc_crear", ok: true })
+    const orden = await readFile(join(deps.directory, "out", "sol-001", "orden.json"), "utf8")
+    expect(orden).toContain('"precio_unitario": 95000')
+  })
+
+  test("el modelo solo ve los argumentos que le corresponde enviar", () => {
+    const visibles = Object.fromEntries(definiciones.map((d) => [d.nombre, Object.keys(Object(d.parametros.properties))]))
+    expect(visibles).toEqual({
+      oc_leer_paquete: ["caso"],
+      oc_validar: ["caso"],
+      oc_construir_payload: ["caso"],
+      oc_generar_evidencia: ["caso"],
+      oc_crear: ["caso", "confirmado"],
+    })
+  })
+
   test("CA1: al llegar al tope de iteraciones responde sin más herramientas", async () => {
     const repetir: Paso = () => llamar("oc_leer_paquete", { caso: "sol-001" })
     const { llm, deps, sesion } = await preparar(
@@ -134,17 +160,19 @@ describe("ciclo del agente", () => {
     const { deps, sesion } = await preparar([
       () => llamar("oc_borrar_todo", {}),
       () => jsonRoto,
-      () => llamar("oc_validar", { caso: "sol-001", paquete: { solicitud: {} } }),
+      () => llamar("oc_validar", { caso: "sol-001" }),
+      () => llamar("oc_leer_paquete", { caso: 7 }),
       () => llamar("oc_leer_paquete", { caso: "sol-999" }),
       () => decir("No pude procesar la solicitud."),
     ])
     const respuesta = await ejecutarTurno(sesion, "Procesa sol-999", deps)
 
-    expect(respuesta.toolCalls.map((l) => l.ok)).toEqual([false, false, false, false])
+    expect(respuesta.toolCalls.map((l) => l.ok)).toEqual([false, false, false, false, false])
     expect(respuesta.toolCalls[0]?.resumen).toContain("no existe")
     expect(respuesta.toolCalls[1]?.resumen).toContain("JSON válido")
-    expect(respuesta.toolCalls[2]?.resumen).toContain("Argumentos inválidos")
-    expect(respuesta.toolCalls[3]?.resumen).toContain("No existe el caso")
+    expect(respuesta.toolCalls[2]?.resumen).toContain("Antes de oc_validar debes llamar oc_leer_paquete")
+    expect(respuesta.toolCalls[3]?.resumen).toContain("Argumentos inválidos")
+    expect(respuesta.toolCalls[4]?.resumen).toContain("No existe el caso")
     expect(respuesta.reply).toBe("No pude procesar la solicitud.")
   })
 
