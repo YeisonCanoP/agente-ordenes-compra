@@ -70,3 +70,5 @@ export function cerrarPendientes(pendientes: Pendientes, respuesta: string): boo
   if (!respuesta.includes("?")) pendientes.clear()
   return pendientes.size > 0
 }
+
+export const hayPendientes = (pendientes: Pendientes): boolean => pendientes.size > 0

@@ -29,13 +29,28 @@ export type Sesion = {
 export class Sesiones {
   private readonly sesiones = new Map<string, Sesion>()
   private readonly colas = new Map<string, Promise<void>>()
+  private readonly maximo: number
+
+  /** Al superar `maximo` sesiones se descarta la más antigua: la memoria no crece sin límite. */
+  constructor(maximo = 200) {
+    this.maximo = maximo
+  }
 
   obtener(id: string): Sesion {
     const existente = this.sesiones.get(id)
     if (existente) return existente
     const nueva: Sesion = { id, mensajes: [], historial: [], tokens: 0, pendientes: new Map() }
     this.sesiones.set(id, nueva)
+    this.descartarAntiguas()
     return nueva
+  }
+
+  private descartarAntiguas(): void {
+    for (const id of this.sesiones.keys()) {
+      if (this.sesiones.size <= this.maximo) return
+      this.sesiones.delete(id)
+      this.colas.delete(id)
+    }
   }
 
   buscar(id: string): Sesion | null {

@@ -13,12 +13,16 @@ const EntornoSchema = z.object({
   MAX_TOKENS_RESPUESTA: entero(4_000),
   MAX_ITERACIONES: entero(25),
   MAX_TOKENS_SESION: entero(300_000),
+  MAX_TOKENS_DIA: entero(3_000_000),
+  ACCESS_KEY: textoOpcional,
   PORT: entero(3000),
 })
 
 export type Config = {
   llm: { apiKey: string | undefined; modelo: string; timeoutMs: number; maxTokensRespuesta: number }
   agente: { maxIteraciones: number; maxTokensSesion: number }
+  /** Tope global de tokens por día y clave de acceso opcional al chat. */
+  servidor: { maxTokensDia: number; claveAcceso: string | undefined }
   puerto: number
 }
 
@@ -33,6 +37,7 @@ export function leerConfig(entorno: Record<string, string | undefined> = process
       maxTokensRespuesta: e.MAX_TOKENS_RESPUESTA,
     },
     agente: { maxIteraciones: e.MAX_ITERACIONES, maxTokensSesion: e.MAX_TOKENS_SESION },
+    servidor: { maxTokensDia: e.MAX_TOKENS_DIA, claveAcceso: e.ACCESS_KEY },
     puerto: e.PORT,
   }
 }

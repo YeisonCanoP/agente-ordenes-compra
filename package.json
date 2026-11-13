@@ -5,6 +5,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
     "demo": "bun run demo.ts",
     "test": "bun test",
     "chat": "bun run scripts/chat.ts",
