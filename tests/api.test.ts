@@ -137,4 +137,14 @@ describe("API del chat", () => {
     expect(segundo.status).toBe(429)
     expect(await errorDe(segundo)).toContain("tope diario")
   })
+
+  test("sirve el front con cabeceras de seguridad", async () => {
+    const { get } = await api([])
+    const pagina = await get("/")
+    expect(pagina.status).toBe(200)
+    expect(pagina.headers.get("Content-Type")).toContain("text/html")
+    expect(pagina.headers.get("Content-Security-Policy")).toContain("default-src 'self'")
+    expect((await get("/app.js")).status).toBe(200)
+    expect((await get("/estilos.css")).status).toBe(200)
+  })
 })

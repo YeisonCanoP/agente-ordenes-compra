@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Agente de órdenes de compra</title>
+    <link rel="stylesheet" href="/estilos.css" />
+  </head>
+  <body>
+    <header class="barra">
+      <div class="marca">
+        <span class="logo" aria-hidden="true">OC</span>
+        <div>
+          <h1>Agente de órdenes de compra</h1>
+          <p id="estado-modelo" class="tenue">Conectando…</p>
+        </div>
+      </div>
+      <button id="nueva-sesion" class="boton secundario" type="button">Nueva sesión</button>
+    </header>
+
+    <main id="conversacion" aria-live="polite">
+      <section id="bienvenida" class="bienvenida">
+        <h2>¿Qué solicitud procesamos?</h2>
+        <p class="tenue">
+          Indica el caso y el agente lee el paquete, lo valida contra los maestros, arma la orden de compra y
+          la crea en SAP. Si algo requiere tu decisión, te lo pregunta antes de crear.
+        </p>
+        <div class="sugerencias">
+          <button
+            class="sugerencia destacada"
+            type="button"
+            data-mensaje='Procesa la solicitud "sol-004". Muéstrame la OC como quedaría en SAP, qué validaciones pasó y cuáles no, y no la crees hasta que yo lo confirme.'
+          >
+            <strong>Demo: sol-004</strong>
+            <span>Revisar antes de crear</span>
+          </button>
+          <button class="sugerencia" type="button" data-mensaje='Procesa la solicitud "sol-001"'>
+            <strong>sol-001</strong><span>Licencias antivirus</span>
+          </button>
+          <button class="sugerencia" type="button" data-mensaje='Procesa la solicitud "sol-002"'>
+            <strong>sol-002</strong><span>Herramienta de pruebas</span>
+          </button>
+          <button class="sugerencia" type="button" data-mensaje='Procesa la solicitud "sol-003"'>
+            <strong>sol-003</strong><span>Mobiliario nueva sede</span>
+          </button>
+          <button class="sugerencia" type="button" data-mensaje='Procesa la solicitud "sol-005"'>
+            <strong>sol-005</strong><span>Papelería y tóner</span>
+          </button>
+          <button class="sugerencia" type="button" data-mensaje='Procesa la solicitud "sol-006"'>
+            <strong>sol-006</strong><span>Diademas de soporte</span>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <form id="formulario" class="redactor" autocomplete="off">
+      <label class="oculto" for="entrada">Mensaje para el agente</label>
+      <textarea
+        id="entrada"
+        rows="1"
+        maxlength="4000"
+        placeholder="Escribe tu mensaje…"
+        required
+      ></textarea>
+      <button id="enviar" class="boton primario" type="submit">Enviar</button>
+    </form>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
