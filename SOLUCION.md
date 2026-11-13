@@ -310,7 +310,7 @@ sus topes, adaptador LLM, prompt en Markdown y `demo.ts`: hechos. Streaming (opc
 | Asistente | Para qué lo usé |
 |---|---|
 | **Claude Code (Anthropic)** | Asistente principal durante todo el reto: lectura del PRD y revisión de los fixtures en busca de instrucciones ocultas, plan por fases, escritura del código, los tests y esta documentación, y prueba del chat en el navegador. |
-| **Un segundo asistente como revisor** | Revisión independiente del código ya escrito. Encontró cinco problemas reales (confirmación dependiente del modelo, tope diario superable con peticiones simultáneas, órdenes sin volumen persistente, creación parcial y memoria sin acotar) que se corrigieron. |
+| **Codex (OpenAI)** | Revisor independiente del código que ya había escrito Claude Code. Encontró cinco problemas reales (confirmación dependiente del modelo, tope diario superable con peticiones simultáneas, órdenes sin volumen persistente, creación parcial y memoria sin acotar) que se corrigieron. |
 | **OpenAI `gpt-4.1-mini`** | Es el modelo del agente en ejecución, no un asistente de construcción. |
 
 **Cómo trabajé con ellos.** Definí el alcance de cada fase antes de escribir código, pedí commits
@@ -323,7 +323,7 @@ tests corren sin modelo, y el chat se probó contra OpenAI con los casos reales.
   prueba real el modelo alteró el payload y necesitó cuatro intentos; lo reemplacé por el enlace de
   resultados en el ciclo.
 - **Decidir la confirmación mirando si la respuesta del agente contenía un signo de pregunta**, y
-  autorizar cualquier mensaje posterior. La revisión mostró que dependía del modelo; ahora la clasifica
+  autorizar cualquier mensaje posterior. La revisión de Codex mostró que dependía del modelo; ahora la clasifica
   el backend con reglas fijas.
 - **Desplegar en una plataforma administrada con su archivo de configuración.** Lo quité: el despliegue
   es en un EC2 propio con Docker.
