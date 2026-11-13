@@ -165,6 +165,72 @@ describe("casos del reto", () => {
   })
 })
 
+describe("reglas de control que los fixtures no ejercitan", () => {
+  /** Copia de sol-001 (caso feliz) con algunos campos de la solicitud cambiados. */
+  async function validarCon(cambios: Record<string, unknown>): Promise<Validacion> {
+    const ctx = await entorno()
+    const ruta = join(ctx.directory, "fixtures", "reto-03", "solicitudes", "sol-001", "solicitud.json")
+    const original: unknown = JSON.parse(await readFile(ruta, "utf8"))
+    await writeFile(ruta, JSON.stringify({ ...Object(original), ...cambios }), "utf8")
+    return (await leerYValidar(ctx, "sol-001")).validacion
+  }
+
+  test("RC1: un proveedor inactivo bloquea", async () => {
+    const validacion = await validarCon({ proveedor_nit: "901777888", proveedor_nombre: "Consultores Ágiles S.A.S." })
+    expect(reglas(validacion.bloqueos)).toEqual(["RC1"])
+    expect(validacion.bloqueos[0]?.mensaje).toContain("inactivo")
+  })
+
+  test("RC3: un valor por encima del tope del aprobador bloquea y sugiere quién sí puede aprobar", async () => {
+    const validacion = await validarCon({ cantidad: 600, valor_total: 57_000_000 })
+    expect(reglas(validacion.bloqueos)).toEqual(["RC3"])
+    expect(validacion.bloqueos[0]?.valores).toEqual({ valor_total: 57_000_000, tope: 50_000_000 })
+    expect(validacion.bloqueos[0]?.accion_sugerida).toContain("dgarcia@periferia-ficticia.com")
+  })
+
+  test("RC4: una subárea que no pertenece al centro de costo bloquea", async () => {
+    const validacion = await validarCon({ subarea: "Marketing" })
+    expect(reglas(validacion.bloqueos)).toEqual(["RC4"])
+    expect(validacion.bloqueos[0]?.accion_sugerida).toContain("Infraestructura, Soporte, Desarrollo")
+  })
+
+  test("RC4: un centro de costo inexistente bloquea", async () => {
+    const validacion = await validarCon({ centro_costo: "CC-9999" })
+    expect(reglas(validacion.bloqueos)).toEqual(["RC4"])
+  })
+
+  test("RC6 y RC7: un código que no existe en el maestro bloquea", async () => {
+    const validacion = await validarCon({ indicador_iva: "C9", condiciones_pago: "Z999" })
+    expect(reglas(validacion.bloqueos)).toEqual(["RC6", "RC7"])
+  })
+
+  test("RC9: una aprobación anterior a la solicitud pide confirmación", async () => {
+    const validacion = await validarCon({ fecha_solicitud: "2026-08-25" })
+    expect(validacion.apta).toBe(true)
+    expect(reglas(validacion.confirmaciones)).toEqual(["RC9"])
+    expect(validacion.confirmaciones[0]?.valores).toEqual({
+      fecha_aprobacion: "2026-08-21",
+      fecha_solicitud: "2026-08-25",
+    })
+  })
+
+  test("RC10: cantidad × valor unitario distinto del total bloquea; ± 1 se tolera", async () => {
+    const descuadrada = await validarCon({ valor_total: 11_400_500 })
+    expect(reglas(descuadrada.bloqueos)).toEqual(["RC10"])
+    const tolerada = await validarCon({ valor_total: 11_400_001 })
+    expect(tolerada.bloqueos).toEqual([])
+  })
+
+  test("RC2: un correo que dice \"No aprobado\" bloquea", async () => {
+    const ctx = await entorno()
+    const ruta = join(ctx.directory, "fixtures", "reto-03", "solicitudes", "sol-001", "aprobacion.json")
+    const original: unknown = JSON.parse(await readFile(ruta, "utf8"))
+    await writeFile(ruta, JSON.stringify({ ...Object(original), cuerpo: "No aprobado, falta la cotización." }), "utf8")
+    const { validacion } = await leerYValidar(ctx, "sol-001")
+    expect(reglas(validacion.bloqueos)).toEqual(["RC2"])
+  })
+})
+
 describe("creación idempotente y reparable", () => {
   test("dos creaciones simultáneas de la misma solicitud producen una sola OC", async () => {
     const ctx = await entorno()
