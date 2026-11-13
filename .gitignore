@@ -19,3 +19,6 @@ npm-debug.log*
 # IDE
 .idea/
 .vscode/*
+
+# Documento del reto (copia local de apoyo, no se publica)
+docs/
