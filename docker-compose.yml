@@ -1,11 +1,19 @@
-# Levanta el agente en local con un comando: docker compose up --build
+# Levanta el agente con un comando: docker compose up -d --build
 services:
   agente:
     build: .
+    image: agente-oc
     # PUERTO_PUBLICO=80 publica el chat en el puerto HTTP del servidor (por ejemplo en EC2).
     ports:
       - "${PUERTO_PUBLICO:-3000}:3000"
     env_file: .env
-    restart: unless-stopped
     environment:
       PORT: 3000
+    volumes:
+      # out/ guarda las órdenes del SAP simulado, las evidencias y los logs de control:
+      # con el volumen sobreviven a recrear o actualizar el contenedor.
+      - datos:/app/out
+    restart: unless-stopped
+
+volumes:
+  datos:

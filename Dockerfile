@@ -17,6 +17,9 @@ COPY demo.ts tsconfig.json ./
 RUN mkdir -p out && chown -R bun:bun /app
 USER bun
 
+# Monta aquí un volumen para conservar órdenes, evidencias y auditoría entre despliegues.
+VOLUME /app/out
+
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
