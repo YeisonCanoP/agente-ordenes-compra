@@ -9,9 +9,13 @@ Reto técnico 03 · Periferia IT Group. El planteamiento completo está en [SOLU
 
 ## Link de prueba
 
-**PENDIENTE: `http://<IP-ELÁSTICA>`** (EC2 en AWS, HTTP en el puerto 80).
+**<http://100.51.72.179>** (EC2 en AWS con IP elástica, HTTP en el puerto 80).
 
-Clave de acceso: no aplica, el link es público. El gasto está acotado por topes de tokens
+El chat está protegido: al enviar el primer mensaje pide una clave de acceso.
+
+Clave de acceso: **PENDIENTE**
+
+Además de la clave, el gasto está acotado por topes de tokens
 (ver [Variables de entorno](#variables-de-entorno)).
 
 ## Levantar en local

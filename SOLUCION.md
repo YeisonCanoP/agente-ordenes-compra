@@ -112,10 +112,15 @@ herramientas) → respuesta`. Cambiar de proveedor es escribir otra clase; el ci
 lo demuestran usando un modelo simulado que implementa la misma interfaz.
 
 **Costo estimado por caso.** En la prueba real del caso `sol-004` (procesar, mostrar la OC, confirmar y
-crear) el consumo fue de unos 19.000 tokens, casi todos de entrada. Con un precio de referencia de
-USD 0,40 por millón de tokens de entrada y USD 1,60 por millón de salida, cada caso cuesta alrededor de
-**USD 0,01**. Antes de enlazar los resultados entre herramientas el mismo caso consumía unos 38.000
-tokens. El precio debe verificarse contra la tarifa vigente del proveedor.
+crear) el consumo fue de unos 19.000 tokens, casi todos de entrada. La tarifa publicada por OpenAI para
+`gpt-4.1-mini` (página del modelo, consultada en noviembre de 2026) es de USD 0,40 por millón de tokens
+de entrada, USD 0,10 si la entrada está en caché y USD 1,60 por millón de salida. Con unos 17.500
+tokens de entrada y 1.500 de salida, cada caso cuesta alrededor de **USD 0,01**. Antes de enlazar los
+resultados entre herramientas el mismo caso consumía unos 38.000 tokens.
+
+**Vigencia del modelo.** OpenAI ya marca `gpt-4.1-mini` como deprecado y recomienda GPT-5 mini (USD 0,25
+por millón de tokens de entrada). El modelo se elige con la variable `OPENAI_MODEL`, así que migrar no
+requiere cambiar código; sí requiere repetir las pruebas del chat, que hice solo con `gpt-4.1-mini`.
 
 ## 5. Matriz de controles
 
@@ -339,6 +344,6 @@ tests corren sin modelo, y el chat se probó contra OpenAI con los casos reales.
 | **OC duplicada por reintentos o peticiones simultáneas.** | Búsqueda por referencia antes de crear, creación serializada y recibo reparable. Con SAP real: referencia externa única y consulta tras un timeout. |
 | **Pérdida de datos al reiniciar.** | Órdenes, control y evidencias están en un volumen. Las conversaciones no; en producción irían a un almacenamiento persistente. |
 | **Datos sensibles hacia el proveedor del modelo.** | Los fixtures son ficticios. En producción: acuerdo de tratamiento de datos, minimizar lo que se envía y evaluar un modelo desplegado en la nube de la compañía. |
-| **Caída o cambio del proveedor del modelo.** | Timeout y mensaje claro; el adaptador permite cambiar de proveedor sin tocar el ciclo. |
+| **Caída, cambio o retiro del modelo.** | Timeout y mensaje claro. `gpt-4.1-mini` ya está marcado como deprecado: el modelo se cambia con `OPENAI_MODEL` y el adaptador permite cambiar de proveedor sin tocar el ciclo. Cada cambio exige repetir las pruebas del chat. |
 | **Evidencia cuestionada por auditoría.** | Hoy es el texto del correo con su sha256. En producción: el `.eml` original, PDF y firma digital si se exige. |
 | **Tráfico sin cifrar.** | El link de prueba es HTTP. En producción: HTTPS obligatorio. |
