@@ -28,11 +28,12 @@ export class SapMock implements SapAdapter {
     return proveedor ? { codigo_sap: proveedor.codigo_sap, activo: proveedor.activo } : null
   }
 
-  crearOrden(orden: OrdenCompra): Promise<{ numero_oc: string; fecha: string }> {
+  /** Crea la OC o, si la solicitud ya tiene una, devuelve esa misma con `reutilizada: true`. */
+  crearOrden(orden: OrdenCompra): Promise<{ numero_oc: string; fecha: string; reutilizada: boolean }> {
     return this.enSerie(async () => {
       const registros = await this.leerRegistros()
       const previo = registros.find((r) => r.orden.referencia.solicitud_id === orden.referencia.solicitud_id)
-      if (previo) return { numero_oc: previo.numero_oc, fecha: previo.fecha }
+      if (previo) return { numero_oc: previo.numero_oc, fecha: previo.fecha, reutilizada: true }
 
       const registro: Registro = {
         numero_oc: String(PRIMER_NUMERO + registros.length),
@@ -41,14 +42,14 @@ export class SapMock implements SapAdapter {
       }
       await mkdir(rutaSalida(this.directory, "sap"), { recursive: true })
       await appendFile(this.rutaOrdenes(), `${JSON.stringify(registro)}\n`, "utf8")
-      return { numero_oc: registro.numero_oc, fecha: registro.fecha }
+      return { numero_oc: registro.numero_oc, fecha: registro.fecha, reutilizada: false }
     })
   }
 
-  async buscarOrdenPorReferencia(solicitud_id: string): Promise<{ numero_oc: string } | null> {
+  async buscarOrdenPorReferencia(solicitud_id: string): Promise<{ numero_oc: string; fecha: string } | null> {
     const registros = await this.leerRegistros()
     const registro = registros.find((r) => r.orden.referencia.solicitud_id === solicitud_id)
-    return registro ? { numero_oc: registro.numero_oc } : null
+    return registro ? { numero_oc: registro.numero_oc, fecha: registro.fecha } : null
   }
 
   private rutaOrdenes(): string {

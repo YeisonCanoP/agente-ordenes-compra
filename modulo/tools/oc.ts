@@ -811,7 +811,7 @@ class SapMock {
       const registros = await this.leerRegistros();
       const previo = registros.find((r) => r.orden.referencia.solicitud_id === orden.referencia.solicitud_id);
       if (previo)
-        return { numero_oc: previo.numero_oc, fecha: previo.fecha };
+        return { numero_oc: previo.numero_oc, fecha: previo.fecha, reutilizada: true };
       const registro = {
         numero_oc: String(PRIMER_NUMERO + registros.length),
         fecha: new Date().toISOString(),
@@ -820,13 +820,13 @@ class SapMock {
       await mkdir3(rutaSalida(this.directory, "sap"), { recursive: true });
       await appendFile2(this.rutaOrdenes(), `${JSON.stringify(registro)}
 `, "utf8");
-      return { numero_oc: registro.numero_oc, fecha: registro.fecha };
+      return { numero_oc: registro.numero_oc, fecha: registro.fecha, reutilizada: false };
     });
   }
   async buscarOrdenPorReferencia(solicitud_id) {
     const registros = await this.leerRegistros();
     const registro = registros.find((r) => r.orden.referencia.solicitud_id === solicitud_id);
-    return registro ? { numero_oc: registro.numero_oc } : null;
+    return registro ? { numero_oc: registro.numero_oc, fecha: registro.fecha } : null;
   }
   rutaOrdenes() {
     return rutaSalida(this.directory, "sap", "ordenes.jsonl");
@@ -890,7 +890,6 @@ var argsValidar = { caso, paquete };
 var argsConstruir = { caso, paquete, derivados };
 var argsEvidencia = { caso };
 var argsCrear = { caso, payload, confirmado };
-var ReciboSchema = z6.object({ numero_oc: z6.string(), fecha: z6.string() });
 var leer_paquete = {
   description: "Lee y normaliza el paquete de una solicitud de compra (correo, solicitud, cotización, aprobación y factura si existe); es siempre el primer paso para procesar un caso.",
   args: argsLeer,
@@ -952,7 +951,7 @@ var crear = {
       const sap = new SapMock(ctx.directory);
       const existente = await sap.buscarOrdenPorReferencia(c.paquete.solicitud.solicitud_id);
       if (existente)
-        return ordenExistente(ctx, a.caso, c, existente.numero_oc);
+        return ordenExistente(ctx, a.caso, c, existente);
       const rechazo = await motivoParaNoCrear(ctx, c, a.confirmado === true);
       if (rechazo)
         return rechazo;
@@ -1013,22 +1012,22 @@ async function crearEnSap(ctx, nombre, c, sap, orden) {
     await registrar(ctx, c, "bloqueada", null);
     return fallo(`SAP no reconoce como activo al proveedor ${orden.proveedor.nombre}; no se creó la OC.`);
   }
-  const evidencia = await generarEvidencia(ctx.directory, nombre);
   const creada = await sap.crearOrden(orden);
-  await writeFile2(rutaSalida(ctx.directory, nombre, "orden.json"), `${JSON.stringify({ ...creada, orden }, null, 2)}
-`, "utf8");
-  await registrar(ctx, c, "creada", creada.numero_oc);
-  return exito({ ...creada, idempotente: false, evidencia: evidencia.ruta });
+  const idempotente = creada.reutilizada === true;
+  const evidencia = await dejarRegistros(ctx, nombre, c, creada, idempotente ? "existente" : "creada");
+  return exito({ numero_oc: creada.numero_oc, fecha: creada.fecha, idempotente, evidencia });
 }
-async function ordenExistente(ctx, nombre, c, numero_oc) {
-  const recibo = await leerJson(rutaSalida(ctx.directory, nombre, "orden.json"), ReciboSchema, "orden.json");
-  await registrar(ctx, c, "existente", numero_oc);
-  return exito({
-    numero_oc,
-    fecha: recibo?.numero_oc === numero_oc ? recibo.fecha : "",
-    idempotente: true,
-    evidencia: `out/${nombre}/aprobacion.txt`
-  });
+async function ordenExistente(ctx, nombre, c, existente) {
+  const recibo = { numero_oc: existente.numero_oc, fecha: existente.fecha ?? "" };
+  const evidencia = await dejarRegistros(ctx, nombre, c, recibo, "existente");
+  return exito({ ...recibo, idempotente: true, evidencia });
+}
+async function dejarRegistros(ctx, nombre, c, recibo, resultado) {
+  const evidencia = await generarEvidencia(ctx.directory, nombre);
+  await writeFile2(rutaSalida(ctx.directory, nombre, "orden.json"), `${JSON.stringify({ numero_oc: recibo.numero_oc, fecha: recibo.fecha, solicitud_id: c.paquete.solicitud.solicitud_id }, null, 2)}
+`, "utf8");
+  await registrar(ctx, c, resultado, recibo.numero_oc);
+  return evidencia.ruta;
 }
 function registrar(ctx, c, resultado, numero_oc) {
   return registrarControl(ctx.directory, {

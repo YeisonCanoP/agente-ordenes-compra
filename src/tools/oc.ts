@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { z } from "zod"
-import { ErrorLegible, leerJson, rutaSalida } from "../dominio/archivos.ts"
+import { ErrorLegible, rutaSalida } from "../dominio/archivos.ts"
 import { diferencias } from "../dominio/comparar.ts"
 import { registrarControl } from "../dominio/control.ts"
 import type { FilaControl } from "../dominio/control.ts"
@@ -37,8 +37,6 @@ const argsValidar = { caso, paquete }
 const argsConstruir = { caso, paquete, derivados }
 const argsEvidencia = { caso }
 const argsCrear = { caso, payload, confirmado }
-
-const ReciboSchema = z.object({ numero_oc: z.string(), fecha: z.string() })
 
 export const leer_paquete = {
   description:
@@ -108,7 +106,7 @@ export const crear = {
       const sap: SapAdapter = new SapMock(ctx.directory)
 
       const existente = await sap.buscarOrdenPorReferencia(c.paquete.solicitud.solicitud_id)
-      if (existente) return ordenExistente(ctx, a.caso, c, existente.numero_oc)
+      if (existente) return ordenExistente(ctx, a.caso, c, existente)
 
       const rechazo = await motivoParaNoCrear(ctx, c, a.confirmado === true)
       if (rechazo) return rechazo
@@ -193,27 +191,45 @@ async function crearEnSap(ctx: Ctx, nombre: string, c: Caso, sap: SapAdapter, or
     await registrar(ctx, c, "bloqueada", null)
     return fallo(`SAP no reconoce como activo al proveedor ${orden.proveedor.nombre}; no se creó la OC.`)
   }
-  const evidencia = await generarEvidencia(ctx.directory, nombre)
+  // SAP es la fuente de verdad: si otra llamada creó la OC primero, devuelve esa misma (reutilizada).
   const creada = await sap.crearOrden(orden)
-  await writeFile(
-    rutaSalida(ctx.directory, nombre, "orden.json"),
-    `${JSON.stringify({ ...creada, orden }, null, 2)}\n`,
-    "utf8",
-  )
-  await registrar(ctx, c, "creada", creada.numero_oc)
-  return exito({ ...creada, idempotente: false, evidencia: evidencia.ruta })
+  const idempotente = creada.reutilizada === true
+  const evidencia = await dejarRegistros(ctx, nombre, c, creada, idempotente ? "existente" : "creada")
+  return exito({ numero_oc: creada.numero_oc, fecha: creada.fecha, idempotente, evidencia })
 }
 
 /** Idempotencia (HU-5): la misma solicitud devuelve la OC que ya existe, nunca una segunda. */
-async function ordenExistente(ctx: Ctx, nombre: string, c: Caso, numero_oc: string): Promise<string> {
-  const recibo = await leerJson(rutaSalida(ctx.directory, nombre, "orden.json"), ReciboSchema, "orden.json")
-  await registrar(ctx, c, "existente", numero_oc)
-  return exito({
-    numero_oc,
-    fecha: recibo?.numero_oc === numero_oc ? recibo.fecha : "",
-    idempotente: true,
-    evidencia: `out/${nombre}/aprobacion.txt`,
-  })
+async function ordenExistente(
+  ctx: Ctx,
+  nombre: string,
+  c: Caso,
+  existente: { numero_oc: string; fecha?: string },
+): Promise<string> {
+  const recibo = { numero_oc: existente.numero_oc, fecha: existente.fecha ?? "" }
+  const evidencia = await dejarRegistros(ctx, nombre, c, recibo, "existente")
+  return exito({ ...recibo, idempotente: true, evidencia })
+}
+
+/**
+ * Deja los registros derivados de una OC: evidencia, recibo y fila de control. Se ejecuta también
+ * al reintentar, así que repara lo que haya quedado a medias si un intento anterior falló después
+ * de crear la OC en SAP.
+ */
+async function dejarRegistros(
+  ctx: Ctx,
+  nombre: string,
+  c: Caso,
+  recibo: { numero_oc: string; fecha: string },
+  resultado: "creada" | "existente",
+): Promise<string> {
+  const evidencia = await generarEvidencia(ctx.directory, nombre)
+  await writeFile(
+    rutaSalida(ctx.directory, nombre, "orden.json"),
+    `${JSON.stringify({ numero_oc: recibo.numero_oc, fecha: recibo.fecha, solicitud_id: c.paquete.solicitud.solicitud_id }, null, 2)}\n`,
+    "utf8",
+  )
+  await registrar(ctx, c, resultado, recibo.numero_oc)
+  return evidencia.ruta
 }
 
 function registrar(ctx: Ctx, c: Caso, resultado: FilaControl["resultado"], numero_oc: string | null): Promise<void> {

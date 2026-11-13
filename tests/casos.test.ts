@@ -165,6 +165,37 @@ describe("casos del reto", () => {
   })
 })
 
+describe("creación idempotente y reparable", () => {
+  test("dos creaciones simultáneas de la misma solicitud producen una sola OC", async () => {
+    const ctx = await entorno()
+    const payload = await payloadDe(ctx, "sol-001")
+    const salidas = await Promise.all([
+      crear.execute({ caso: "sol-001", payload }, ctx),
+      crear.execute({ caso: "sol-001", payload }, ctx),
+    ])
+    const creadas = salidas.map((salida) => datos(interpretar(CreadaSchema, salida)))
+
+    expect(creadas.map((c) => c.numero_oc)).toEqual(["4500000001", "4500000001"])
+    expect(creadas.map((c) => c.idempotente).sort()).toEqual([false, true])
+    const ordenes = await readFile(join(ctx.directory, "out", "sap", "ordenes.jsonl"), "utf8")
+    expect(ordenes.trim().split("\n")).toHaveLength(1)
+  })
+
+  test("si faltan el recibo o la evidencia tras crear, el reintento los repara", async () => {
+    const ctx = await entorno()
+    const primera = datos(await intentarCrear(ctx, "sol-001"))
+    const recibo = join(ctx.directory, "out", "sol-001", "orden.json")
+    const evidencia = join(ctx.directory, "out", "sol-001", "aprobacion.txt")
+    await rm(recibo)
+    await rm(evidencia)
+
+    const reintento = datos(await intentarCrear(ctx, "sol-001"))
+    expect(reintento).toMatchObject({ numero_oc: "4500000001", idempotente: true, fecha: primera.fecha })
+    expect(await readFile(recibo, "utf8")).toContain('"numero_oc": "4500000001"')
+    expect(await readFile(evidencia, "utf8")).toContain("sha256:")
+  })
+})
+
 describe("payload y evidencia", () => {
   test("el payload cumple el esquema, recorta la descripción a 40 y deja trazabilidad", async () => {
     const ctx = await entorno()

@@ -153,8 +153,8 @@ describe("ciclo del agente", () => {
     const respuesta = await ejecutarTurno(sesion, "Procesa sol-001", deps)
 
     expect(respuesta.toolCalls[4]).toMatchObject({ nombre: "oc_crear", ok: true })
-    const orden = await readFile(join(deps.directory, "out", "sol-001", "orden.json"), "utf8")
-    expect(orden).toContain('"precio_unitario": 95000')
+    const ordenes = await readFile(join(deps.directory, "out", "sap", "ordenes.jsonl"), "utf8")
+    expect(ordenes).toContain('"precio_unitario":95000')
   })
 
   test("el modelo solo ve los argumentos que le corresponde enviar", () => {
