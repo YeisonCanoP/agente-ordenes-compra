@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { ejecutarTurno } from "../src/agent/ciclo.ts"
 import type { Dependencias } from "../src/agent/ciclo.ts"
+import { clasificarRespuesta } from "../src/agent/confirmacion.ts"
 import { definiciones } from "../src/agent/herramientas.ts"
 import { cargarPrompt } from "../src/agent/prompt.ts"
 import { Sesiones } from "../src/agent/sesiones.ts"
@@ -81,6 +82,49 @@ describe("ciclo del agente", () => {
     expect(segundo.toolCalls[0]).toMatchObject({ nombre: "oc_crear", ok: true, argumentos: { confirmado: true } })
     expect(segundo.needsConfirmation).toBe(false)
     expect(await ordenesCreadas(deps)).toBe(1)
+  })
+
+  test("CA3: una pregunta o una duda no autorizan, aunque el modelo envíe confirmado: true", async () => {
+    const { llm, deps, sesion } = await preparar([
+      ...pasosHastaCrear("sol-004").slice(0, 4),
+      () => decir("La cotización difiere 6 %. ¿Confirmas que cree la OC?"),
+    ])
+    await ejecutarTurno(sesion, "Procesa sol-004", deps)
+
+    for (const mensaje of ["Explícame la diferencia", "¿Sí se puede crear así?", "Sí, pero cambia el valor"]) {
+      llm.agregar(crearCon("sol-004", true), () => decir("Aún no la he creado. ¿Confirmas?"))
+      const turno = await ejecutarTurno(sesion, mensaje, deps)
+      expect(turno.toolCalls[0]).toMatchObject({ nombre: "oc_crear", ok: false, argumentos: { confirmado: false } })
+      expect(turno.needsConfirmation).toBe(true)
+    }
+    expect(await ordenesCreadas(deps)).toBe(0)
+
+    llm.agregar(crearCon("sol-004", true), () => decir("OC creada."))
+    const final = await ejecutarTurno(sesion, "dale", deps)
+    expect(final.toolCalls[0]).toMatchObject({ ok: true, argumentos: { confirmado: true } })
+    expect(await ordenesCreadas(deps)).toBe(1)
+
+    const log = await readFile(join(deps.directory, "out", "log.jsonl"), "utf8")
+    expect(log).toContain('"tipo":"confirmacion"')
+    expect(log).toContain('"casos":{"sol-004":["RC5"]}')
+  })
+
+  test("CA3: el backend clasifica la respuesta de la analista con reglas fijas", () => {
+    const afirmativas = ["Confirmo", "sí", "si confirmo", "Sí, confirmo.", "dale", "Hazlo", "créala", "Adelante", "de acuerdo, créala", "ok"]
+    const negativas = ["No", "no, déjala así", "No, no la crees.", "cancela", "mejor no"]
+    const otras = [
+      "¿Confirmas tú?",
+      "Explícame la diferencia",
+      "Sí, pero cambia el valor",
+      "creo que sí",
+      "si el valor es correcto, procede",
+      "espera",
+      "todavía no",
+      "Procesa sol-004 y créala de una vez, confirmo todo",
+    ]
+    for (const mensaje of afirmativas) expect([mensaje, clasificarRespuesta(mensaje)]).toEqual([mensaje, "afirmativa"])
+    for (const mensaje of negativas) expect([mensaje, clasificarRespuesta(mensaje)]).toEqual([mensaje, "negativa"])
+    for (const mensaje of otras) expect([mensaje, clasificarRespuesta(mensaje)]).toEqual([mensaje, "otra"])
   })
 
   test("CA3: si la analista declina, la confirmación caduca y no se puede crear después", async () => {

@@ -2,10 +2,11 @@ import { z } from "zod"
 import { ErrorLlm } from "../llm/adapter.ts"
 import type { DefinicionHerramienta, LlamadaHerramienta, LlmAdapter, RespuestaLlm } from "../llm/adapter.ts"
 import { fallo } from "../tools/resultado.ts"
-import { actualizarPendientes, cerrarPendientes, retirarConfirmacion } from "./confirmacion.ts"
+import { actualizarPendientes, autorizarSegunRespuesta, hayPendientes, retirarConfirmacion } from "./confirmacion.ts"
+import type { Pendientes } from "./confirmacion.ts"
 import { enlazar, recordar } from "./enlaces.ts"
 import { definiciones, ejecutarHerramienta } from "./herramientas.ts"
-import { registrarLlamada } from "./log.ts"
+import { registrarEvento } from "./log.ts"
 import { resumir } from "./resumen.ts"
 import type { LlamadaVisible, Sesion } from "./sesiones.ts"
 
@@ -21,7 +22,7 @@ export type Dependencias = {
 
 export type RespuestaTurno = { reply: string; toolCalls: LlamadaVisible[]; needsConfirmation: boolean }
 
-type Turno = { sesion: Sesion; deps: Dependencias; autorizados: ReadonlySet<string>; toolCalls: LlamadaVisible[] }
+type Turno = { sesion: Sesion; deps: Dependencias; autorizados: Pendientes; toolCalls: LlamadaVisible[] }
 
 const ConOk = z.looseObject({ ok: z.boolean() })
 const SIN_TEXTO = "(El modelo no devolvió texto. Intenta reformular tu mensaje.)"
@@ -29,10 +30,15 @@ const SIN_TEXTO = "(El modelo no devolvió texto. Intenta reformular tu mensaje.
 /** Un turno del chat: mensaje de la analista → modelo ↔ herramientas → respuesta (PRD 6.3). */
 export async function ejecutarTurno(sesion: Sesion, mensaje: string, deps: Dependencias): Promise<RespuestaTurno> {
   sesion.historial.push({ rol: "usuario", contenido: mensaje, ts: new Date().toISOString() })
-  const turno: Turno = { sesion, deps, autorizados: new Set(sesion.pendientes.keys()), toolCalls: [] }
+  const autorizados = autorizarSegunRespuesta(mensaje, sesion.pendientes)
+  if (autorizados.size > 0) {
+    const casos = Object.fromEntries(autorizados)
+    await registrarEvento(deps.directory, { tipo: "confirmacion", sessionId: sesion.id, mensaje, casos })
+  }
+  const turno: Turno = { sesion, deps, autorizados, toolCalls: [] }
   const reply = sinPresupuesto(turno) ?? (await conversar(turno, mensaje))
 
-  const needsConfirmation = cerrarPendientes(sesion.pendientes, reply)
+  const needsConfirmation = hayPendientes(sesion.pendientes)
   const { toolCalls } = turno
   sesion.historial.push({ rol: "asistente", contenido: reply, toolCalls, needsConfirmation, ts: new Date().toISOString() })
   return { reply, toolCalls, needsConfirmation }
@@ -77,7 +83,8 @@ async function consultar(turno: Turno, herramientas: DefinicionHerramienta[]): P
 async function ejecutarLlamada(turno: Turno, llamada: LlamadaHerramienta): Promise<void> {
   const { sesion, deps } = turno
   const inicio = Date.now()
-  const recibidos = retirarConfirmacion(llamada.nombre, parsearArgumentos(llamada.argumentos), turno.autorizados)
+  const crudos = parsearArgumentos(llamada.argumentos)
+  const recibidos = retirarConfirmacion(llamada.nombre, crudos, turno.autorizados, sesion.pendientes)
   const enlazado = enlazar(llamada.nombre, recibidos, sesion.resultados)
   const argumentos = "falta" in enlazado ? recibidos : enlazado.argumentos
   const salida = await ejecutarOExplicar(turno, llamada.nombre, argumentos, "falta" in enlazado ? enlazado.falta : null)
@@ -97,7 +104,8 @@ async function ejecutarLlamada(turno: Turno, llamada: LlamadaHerramienta): Promi
     resultado,
   }
   turno.toolCalls.push(visible)
-  await registrarLlamada(deps.directory, {
+  await registrarEvento(deps.directory, {
+    tipo: "herramienta",
     sessionId: sesion.id,
     herramienta: visible.nombre,
     argumentos: visible.argumentos,
