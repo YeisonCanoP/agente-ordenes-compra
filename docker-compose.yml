@@ -1,0 +1,9 @@
+# Levanta el agente en local con un comando: docker compose up --build
+services:
+  agente:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file: .env
+    environment:
+      PORT: 3000

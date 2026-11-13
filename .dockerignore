@@ -1,0 +1,11 @@
+node_modules
+out
+.git
+.idea
+.claude
+.env
+.env.*
+!.env.example
+docs
+tests
+*.log

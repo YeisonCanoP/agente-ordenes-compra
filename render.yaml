@@ -1,0 +1,17 @@
+# Blueprint de Render: crea el servicio web a partir del Dockerfile.
+# La clave del modelo no va aquí: Render la pide al crear el servicio (sync: false).
+services:
+  - type: web
+    name: agente-ordenes-compra
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: MAX_TOKENS_SESION
+        value: "300000"
+      - key: MAX_TOKENS_DIA
+        value: "3000000"
