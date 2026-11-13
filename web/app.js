@@ -26,8 +26,14 @@ function bajarAlFinal() {
   conversacion.scrollTop = conversacion.scrollHeight
 }
 
+/** crypto.randomUUID solo existe con HTTPS o en localhost; getRandomValues funciona también por HTTP. */
+function idAleatorio() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
 function estrenarSesion() {
-  const id = crypto.randomUUID()
+  const id = idAleatorio()
   localStorage.setItem(CLAVE_SESION, id)
   return id
 }
