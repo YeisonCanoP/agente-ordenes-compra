@@ -19,6 +19,3 @@ npm-debug.log*
 # IDE
 .idea/
 .vscode/*
-
-# Configuración local de Claude Code
-.claude/

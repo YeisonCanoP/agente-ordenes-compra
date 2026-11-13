@@ -2,8 +2,10 @@
 services:
   agente:
     build: .
+    # PUERTO_PUBLICO=80 publica el chat en el puerto HTTP del servidor (por ejemplo en EC2).
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PUERTO_PUBLICO:-3000}:3000"
     env_file: .env
+    restart: unless-stopped
     environment:
       PORT: 3000
