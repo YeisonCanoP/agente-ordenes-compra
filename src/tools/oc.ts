@@ -61,7 +61,7 @@ export const validar = {
     return protegido(async () => {
       const a = leerArgs(z.object(argsValidar), args)
       const c = await cargarCaso(ctx, a.caso)
-      exigirIgual("paquete", a.paquete, c.paquete, "oc_leer_paquete")
+      exigirIgual("paquete", sinTextoLibre(a.paquete), sinTextoLibre(c.paquete), "oc_leer_paquete")
       if (!c.validacion.apta) await registrar(ctx, c, "bloqueada", null)
       return exito(c.validacion)
     })
@@ -76,7 +76,7 @@ export const construir_payload = {
     return protegido(async () => {
       const a = leerArgs(z.object(argsConstruir), args)
       const c = await cargarCaso(ctx, a.caso)
-      exigirIgual("paquete", a.paquete, c.paquete, "oc_leer_paquete")
+      exigirIgual("paquete", sinTextoLibre(a.paquete), sinTextoLibre(c.paquete), "oc_leer_paquete")
       exigirIgual("objeto derivados", a.derivados, c.validacion.derivados, "oc_validar")
       if (!c.validacion.apta) return fallo(mensajeBloqueos(c.validacion), { bloqueos: c.validacion.bloqueos })
       const { orden, trazabilidad } = await ordenEsperada(ctx, a.caso, c)
@@ -124,6 +124,15 @@ export const crear = {
 async function cargarCaso(ctx: Ctx, nombre: string): Promise<Caso> {
   const [leido, maestros] = await Promise.all([leerPaquete(ctx.directory, nombre), cargarMaestros(ctx.directory)])
   return { ...leido, maestros, validacion: validarPaquete(leido.paquete, maestros) }
+}
+
+/** El texto libre de los documentos no participa en ninguna regla: se compara todo lo demás. */
+function sinTextoLibre(p: Paquete): Paquete {
+  return {
+    ...p,
+    cotizacion: p.cotizacion && { ...p.cotizacion, texto: "" },
+    aprobacion: p.aprobacion && { ...p.aprobacion, texto: "" },
+  }
 }
 
 /** Impide que un valor alterado (por ejemplo un monto "arreglado") llegue a SAP. */
