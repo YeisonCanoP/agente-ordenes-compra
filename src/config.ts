@@ -13,7 +13,7 @@ const EntornoSchema = z.object({
   MAX_TOKENS_RESPUESTA: entero(4_000),
   MAX_ITERACIONES: entero(25),
   MAX_TOKENS_SESION: entero(300_000),
-  MAX_TOKENS_DIA: entero(3_000_000),
+  MAX_TOKENS_DIA: entero(500_000),
   ACCESS_KEY: textoOpcional,
   PORT: entero(3000),
 })
